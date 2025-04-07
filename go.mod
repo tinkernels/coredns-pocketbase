@@ -8,6 +8,7 @@ require (
 	github.com/coredns/caddy v1.1.2-0.20241029205200-8de985351a98
 	github.com/coredns/coredns v1.12.1
 	github.com/miekg/dns v1.1.64
+	github.com/pocketbase/dbx v1.11.0
 	github.com/pocketbase/pocketbase v0.26.6
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/net v0.38.0
@@ -41,7 +42,6 @@ require (
 	github.com/onsi/ginkgo/v2 v2.21.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/pocketbase/dbx v1.11.0 // indirect
 	github.com/prometheus/client_golang v1.21.1 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.63.0 // indirect
