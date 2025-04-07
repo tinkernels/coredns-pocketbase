@@ -5,16 +5,18 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	m "github.com/tinkernels/coredns-pocketbase/handler/pocketbase/model"
 )
 
-func TestFindRecord(t *testing.T) {
+func TestFetchRecords(t *testing.T) {
 	// Setup test instance
 	dataDir := "../testdata/pb_data"
 	inst := NewWithDataDir(dataDir).
 		WithSuUserName("test@example.com").
 		WithSuPassword("testpassword").
 		WithListen("127.0.0.1:8090").
-		WithDefaultTtl(30)
+		WithDefaultTtl(30).
+		WithCacheCapacity(0)
 
 	// Start the instance in a goroutine since it blocks
 	go func() {
@@ -30,7 +32,7 @@ func TestFindRecord(t *testing.T) {
 		zone     string
 		record   string
 		types    []string
-		expected []*Record
+		expected []*m.Record
 		err      error
 	}{
 		{
@@ -38,7 +40,7 @@ func TestFindRecord(t *testing.T) {
 			zone:   "example.com.",
 			record: "cname",
 			types:  []string{"CNAME"},
-			expected: []*Record{
+			expected: []*m.Record{
 				{
 					Zone:       "example.com.",
 					Name:       "cname",
@@ -54,7 +56,7 @@ func TestFindRecord(t *testing.T) {
 			zone:   "example.com.",
 			record: "b",
 			types:  []string{"A", "TXT"},
-			expected: []*Record{
+			expected: []*m.Record{
 				{
 					Zone:       "example.com.",
 					Name:       "b",
@@ -77,7 +79,7 @@ func TestFindRecord(t *testing.T) {
 			zone:     "example.com.",
 			record:   "nonexistent",
 			types:    []string{"A"},
-			expected: []*Record{},
+			expected: []*m.Record{},
 			err:      nil,
 		},
 	}
@@ -87,7 +89,7 @@ func TestFindRecord(t *testing.T) {
 			// TODO: Insert test data into PocketBase before running tests
 			// This would require setting up the collection and inserting records
 
-			recs, err := inst.findRecords(tt.zone, tt.record, tt.types...)
+			recs, err := inst.FetchRecords(tt.zone, tt.record, tt.types...)
 			if tt.err != nil {
 				assert.Error(t, err)
 				assert.Equal(t, tt.err, err)
@@ -108,7 +110,7 @@ func TestFindRecord(t *testing.T) {
 	}
 }
 
-func TestFindZones(t *testing.T) {
+func TestFetchZones(t *testing.T) {
 	// Create a test instance
 	inst := NewWithDataDir("../testdata/pb_data").
 		WithSuUserName("test@example.com").
@@ -118,9 +120,8 @@ func TestFindZones(t *testing.T) {
 
 	// Start PocketBase in a goroutine
 	go func() {
-		if err := inst.Start(); err != nil {
-			t.Fatalf("Failed to start PocketBase: %v", err)
-		}
+		err := inst.Start()
+		assert.NoError(t, err)
 	}()
 
 	// Wait for PocketBase to be ready
@@ -141,8 +142,8 @@ func TestFindZones(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Test findZones
-			zones, err := inst.findZones()
+			// Test FetchZones
+			zones, err := inst.FetchZones()
 			if tt.expectError {
 				if err == nil {
 					t.Error("Expected error but got none")
@@ -151,7 +152,7 @@ func TestFindZones(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Fatalf("findZones failed: %v", err)
+				t.Fatalf("FetchZones failed: %v", err)
 			}
 
 			// Check if we got the expected zones

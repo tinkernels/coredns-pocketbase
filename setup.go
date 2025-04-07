@@ -18,10 +18,17 @@ func init() {
 }
 
 func setup(c *caddy.Controller) error {
-	pluginInst, err := parseConfig(c)
+	pluginConfig, err := parseConfig(c)
 	if err != nil {
 		return plugin.Error("pocketbase", err)
 	}
+
+	pluginInst, err := handler.NewWithConfig(pluginConfig)
+	if err != nil {
+		return plugin.Error("pocketbase", err)
+	}
+	// warm up the plugin
+	pluginInst.WarmUp()
 
 	dnsserver.GetConfig(c).AddPlugin(func(next plugin.Handler) plugin.Handler {
 		pluginInst.Next = next
@@ -30,8 +37,8 @@ func setup(c *caddy.Controller) error {
 	return nil
 }
 
-func parseConfig(c *caddy.Controller) (h *handler.PocketBaseHandler, err error) {
-	conf := handler.NewConfig()
+func parseConfig(c *caddy.Controller) (conf *handler.Config, err error) {
+	conf = handler.NewConfig()
 
 	c.Next()
 	if c.NextBlock() {
@@ -88,7 +95,5 @@ func parseConfig(c *caddy.Controller) (h *handler.PocketBaseHandler, err error) 
 			}
 		}
 	}
-
-	h, err = handler.NewWithConfig(conf)
 	return
 }

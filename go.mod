@@ -7,6 +7,7 @@ toolchain go1.24.1
 require (
 	github.com/coredns/caddy v1.1.2-0.20241029205200-8de985351a98
 	github.com/coredns/coredns v1.12.1
+	github.com/dgraph-io/ristretto/v2 v2.2.0
 	github.com/miekg/dns v1.1.64
 	github.com/pocketbase/dbx v1.11.0
 	github.com/pocketbase/pocketbase v0.26.6

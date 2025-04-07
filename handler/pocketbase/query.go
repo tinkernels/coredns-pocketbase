@@ -6,6 +6,7 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/pocketbase/dbx"
+	m "github.com/tinkernels/coredns-pocketbase/handler/pocketbase/model"
 )
 
 const (
@@ -13,7 +14,14 @@ const (
 	recordWildcardPrefix = recordWildcardSymbol + "."
 )
 
-func (inst *Instance) findRecords(zone string, name string, types ...string) (recs []*Record, err error) {
+func (inst *Instance) FetchRecords(zone string, name string, types ...string) (recs []*m.Record, err error) {
+	// if cache is enabled, try to get from cache
+	if inst.cacheCapacity > 0 {
+		recs, ok := inst.recordsCache.Get(fmt.Sprintf(RecordsCacheKeyFormat, zone, name, strings.Join(types, ",")))
+		if ok {
+			return recs, nil
+		}
+	}
 	coll, err := inst.pb.FindCollectionByNameOrId("coredns_records")
 	if err != nil {
 		return nil, err
@@ -40,18 +48,21 @@ func (inst *Instance) findRecords(zone string, name string, types ...string) (re
 	if err != nil {
 		return nil, err
 	}
-	// add handler into records
-	for _, rec := range recs {
-		rec.inst = inst
+	// If no records found, check for wildcard records.
+	if len(recs) == 0 && name != zone {
+		return inst.fetchWildCardRecords(zone, name, types...)
+	}
+	// if cache is enabled, set to cache
+	if inst.cacheCapacity > 0 {
+		inst.recordsCache.Set(fmt.Sprintf(RecordsCacheKeyFormat, zone, name, strings.Join(types, ",")), recs)
 	}
 	return
 }
 
-// findWildcardRecords attempts to find wildcard records
+// fetchWildCardRecords attempts to find wildcard records
 // recursively until it finds matching records.
 // e.g. x.y.z -> *.y.z -> *.z -> *
-func (inst *Instance) findWildcardRecords(zone string, name string, types ...string) (recs []*Record, err error) {
-
+func (inst *Instance) fetchWildCardRecords(zone string, name string, types ...string) (recs []*m.Record, err error) {
 	if name == recordWildcardSymbol {
 		return nil, nil
 	}
@@ -64,10 +75,17 @@ func (inst *Instance) findWildcardRecords(zone string, name string, types ...str
 		target = recordWildcardPrefix + name[i:]
 	}
 
-	return inst.findRecords(zone, target, types...)
+	return inst.FetchRecords(zone, target, types...)
 }
 
-func (inst *Instance) findZones() (zones []string, err error) {
+func (inst *Instance) FetchZones() (zones []string, err error) {
+	// if cache is enabled, try to get from cache
+	if inst.cacheCapacity > 0 {
+		zones, ok := inst.zonesCache.Get(ZonesCacheKey)
+		if ok {
+			return zones, nil
+		}
+	}
 	coll, err := inst.pb.FindCollectionByNameOrId("coredns_records")
 	if err != nil {
 		return nil, err
@@ -85,11 +103,15 @@ func (inst *Instance) findZones() (zones []string, err error) {
 			zones = append(zones, z.Zone)
 		}
 	}
+	// if cache is enabled, set to cache
+	if inst.cacheCapacity > 0 {
+		inst.zonesCache.Set(ZonesCacheKey, zones)
+	}
 	return
 }
 
-func (inst *Instance) hosts(zone string, name string) (answers []dns.RR, err error) {
-	recs, err := inst.findRecords(zone, name, "A", "AAAA", "CNAME")
+func (inst *Instance) Hosts(zone string, name string) (answers []dns.RR, err error) {
+	recs, err := inst.FetchRecords(zone, name, "A", "AAAA", "CNAME")
 	if err != nil {
 		return nil, err
 	}
@@ -99,23 +121,23 @@ func (inst *Instance) hosts(zone string, name string) (answers []dns.RR, err err
 	for _, rec := range recs {
 		switch rec.RecordType {
 		case "A":
-			aRec, _, err := rec.AsARecord()
+			aRec, _, err := inst.ComposeARecord(rec)
 			if err != nil {
 				return nil, err
 			}
 			answers = append(answers, aRec)
 		case "AAAA":
-			aRec, _, err := rec.AsAAAARecord()
+			aaaaRec, _, err := inst.ComposeAAAARecord(rec)
 			if err != nil {
 				return nil, err
 			}
-			answers = append(answers, aRec)
+			answers = append(answers, aaaaRec)
 		case "CNAME":
-			aRec, _, err := rec.AsCNAMERecord()
+			cnameRec, _, err := inst.ComposeCNAMERecord(rec)
 			if err != nil {
 				return nil, err
 			}
-			answers = append(answers, aRec)
+			answers = append(answers, cnameRec)
 		}
 	}
 	return

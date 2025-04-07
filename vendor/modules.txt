@@ -36,6 +36,11 @@ github.com/coredns/coredns/request
 # github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 ## explicit
 github.com/davecgh/go-spew/spew
+# github.com/dgraph-io/ristretto/v2 v2.2.0
+## explicit; go 1.23.0
+github.com/dgraph-io/ristretto/v2
+github.com/dgraph-io/ristretto/v2/z
+github.com/dgraph-io/ristretto/v2/z/simd
 # github.com/disintegration/imaging v1.6.2
 ## explicit
 github.com/disintegration/imaging
