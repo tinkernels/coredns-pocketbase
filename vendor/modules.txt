@@ -33,6 +33,9 @@ github.com/coredns/coredns/plugin/pkg/reuseport
 github.com/coredns/coredns/plugin/pkg/trace
 github.com/coredns/coredns/plugin/pkg/transport
 github.com/coredns/coredns/request
+# github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
+## explicit
+github.com/davecgh/go-spew/spew
 # github.com/disintegration/imaging v1.6.2
 ## explicit
 github.com/disintegration/imaging
@@ -119,6 +122,9 @@ github.com/onsi/ginkgo/v2/types
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
+# github.com/pmezard/go-difflib v1.0.0
+## explicit
+github.com/pmezard/go-difflib/difflib
 # github.com/pocketbase/dbx v1.11.0
 ## explicit; go 1.13
 github.com/pocketbase/dbx
@@ -133,6 +139,7 @@ github.com/pocketbase/pocketbase/forms
 github.com/pocketbase/pocketbase/mails
 github.com/pocketbase/pocketbase/mails/templates
 github.com/pocketbase/pocketbase/migrations
+github.com/pocketbase/pocketbase/plugins/migratecmd
 github.com/pocketbase/pocketbase/tools/archive
 github.com/pocketbase/pocketbase/tools/auth
 github.com/pocketbase/pocketbase/tools/cron
@@ -202,6 +209,11 @@ github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.6
 ## explicit; go 1.12
 github.com/spf13/pflag
+# github.com/stretchr/testify v1.10.0
+## explicit; go 1.17
+github.com/stretchr/testify/assert
+github.com/stretchr/testify/assert/yaml
+github.com/stretchr/testify/require
 # go.uber.org/mock v0.5.0
 ## explicit; go 1.22
 go.uber.org/mock/mockgen
@@ -407,6 +419,9 @@ google.golang.org/protobuf/runtime/protoimpl
 google.golang.org/protobuf/types/known/anypb
 google.golang.org/protobuf/types/known/durationpb
 google.golang.org/protobuf/types/known/timestamppb
+# gopkg.in/yaml.v3 v3.0.1
+## explicit
+gopkg.in/yaml.v3
 # modernc.org/libc v1.61.13
 ## explicit; go 1.21
 modernc.org/libc

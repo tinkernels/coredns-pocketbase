@@ -17,19 +17,19 @@ simple single table data structure that can add and remove records from the DNS 
 pocketbase {
     [liten LISTEN]
     [data_dir DATA_DIR]
-    [su_username SU_USERNAME]
+    [su_email SU_EMAIL]
     [su_password SU_PASSWORD]
     [default_ttl DEFAULT_TTL]
     [cache_capacity CACHE_CAPACITY]
 }
 ```
 
-- `liten` pocketbase listen http address, default to 0.0.0.0:8090,
-- `data_dir` dir to store pocketbase data,
-- `su_email` superuser login name, can be overwritten by environment variable `COREDNS_PB_SUPERUSER_EMAIL`, default to su@pocketbase.internal,
-- `su_password` superuser password, can be overwritten by environment variable `COREDNS_PB_SUPERUSER_PWD`, default to pwd@pocketbase.internal,
-- `default_ttl` default ttl to use, default to 30s,
-- `cache_capacity` zone data cache capacity, 0 to disable cache, default to 0.
+- `liten` pocketbase listening http address, default to `[::]:8090`,
+- `data_dir` dir to store pocketbase data, default to `pb_data`,
+- `su_email` superuser login email, can be overwritten by environment variable `COREDNS_PB_SUPERUSER_EMAIL`, default to `su@pocketbase.internal`,
+- `su_password` superuser password, can be overwritten by environment variable `COREDNS_PB_SUPERUSER_PWD`, default to `pwd@pocketbase.internal`,
+- `default_ttl` default ttl to use, default to `30`,
+- `cache_capacity` zone data cache capacity, `0` to disable cache, default to `0`.
 
 ## Supported Record Types
 

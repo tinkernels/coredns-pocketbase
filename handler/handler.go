@@ -9,16 +9,11 @@ import (
 
 const (
 	pluginName = "pocketbase"
-	defaultTtl = 30
 )
 
 type PocketBaseHandler struct {
 	Next               plugin.Handler
 	pocketbaseInstance *pb.Instance
-}
-
-func (handler *PocketBaseHandler) hosts(zone string, ns string) ([]dns.RR, error) {
-	panic("unimplemented")
 }
 
 // ServeDNS implements the plugin.Handler interface.
@@ -28,3 +23,24 @@ func (handler *PocketBaseHandler) ServeDNS(ctx context.Context, w dns.ResponseWr
 
 // Name implements the Handler interface.
 func (handler *PocketBaseHandler) Name() string { return pluginName }
+
+func NewWithConfig(config *Config) (handler *PocketBaseHandler, err error) {
+	finalConfig := config.MixWithEnv()
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
+	handler = &PocketBaseHandler{
+		pocketbaseInstance: nil,
+	}
+
+	pbInstance := pb.NewWithDataDir(finalConfig.DataDir).
+		WithSuUserName(finalConfig.SuEmail).
+		WithSuPassword(finalConfig.SuPassword).
+		WithListen(finalConfig.Listen).
+		WithDefaultTtl(finalConfig.DefaultTtl)
+
+	handler.pocketbaseInstance = pbInstance
+
+	return handler, nil
+}
