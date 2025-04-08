@@ -19,6 +19,7 @@ func init() {
 
 func setup(c *caddy.Controller) error {
 	pluginConfig, err := parseConfig(c)
+	log.Infof("pocketbase plugin config: %+v", pluginConfig)
 	if err != nil {
 		return plugin.Error("pocketbase", err)
 	}

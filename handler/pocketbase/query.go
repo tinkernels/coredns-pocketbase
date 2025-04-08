@@ -12,8 +12,13 @@ import (
 const (
 	recordWildcardSymbol = "*"
 	recordWildcardPrefix = recordWildcardSymbol + "."
+	recordCollectionName = "coredns_records"
 )
 
+// FetchRecords retrieves DNS records from PocketBase for a given zone, name, and record types.
+// It first checks the cache if enabled, then queries the database if not found in cache.
+// For wildcard records, it recursively checks parent domains until a match is found.
+// Returns a slice of records and any error encountered.
 func (inst *Instance) FetchRecords(zone string, name string, types ...string) (recs []*m.Record, err error) {
 	// if cache is enabled, try to get from cache
 	if inst.cacheCapacity > 0 {
@@ -22,10 +27,11 @@ func (inst *Instance) FetchRecords(zone string, name string, types ...string) (r
 			return recs, nil
 		}
 	}
-	coll, err := inst.pb.FindCollectionByNameOrId("coredns_records")
+	coll, err := inst.pb.FindCollectionByNameOrId(recordCollectionName)
 	if err != nil {
 		return nil, err
 	}
+
 	q := inst.pb.RecordQuery(coll).
 		Select("name", "zone", "ttl", "record_type", "content").
 		Where(dbx.NewExp("zone = {:zone}", dbx.Params{"zone": zone})).
@@ -50,7 +56,7 @@ func (inst *Instance) FetchRecords(zone string, name string, types ...string) (r
 	}
 	// If no records found, check for wildcard records.
 	if len(recs) == 0 && name != zone {
-		return inst.fetchWildCardRecords(zone, name, types...)
+		recs, err = inst.fetchWildCardRecords(zone, name, types...)
 	}
 	// if cache is enabled, set to cache
 	if inst.cacheCapacity > 0 {
@@ -78,6 +84,9 @@ func (inst *Instance) fetchWildCardRecords(zone string, name string, types ...st
 	return inst.FetchRecords(zone, target, types...)
 }
 
+// FetchZones retrieves all unique DNS zones from PocketBase.
+// It first checks the cache if enabled, then queries the database if not found in cache.
+// Returns a slice of zone names and any error encountered.
 func (inst *Instance) FetchZones() (zones []string, err error) {
 	// if cache is enabled, try to get from cache
 	if inst.cacheCapacity > 0 {
@@ -86,7 +95,7 @@ func (inst *Instance) FetchZones() (zones []string, err error) {
 			return zones, nil
 		}
 	}
-	coll, err := inst.pb.FindCollectionByNameOrId("coredns_records")
+	coll, err := inst.pb.FindCollectionByNameOrId(recordCollectionName)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +119,9 @@ func (inst *Instance) FetchZones() (zones []string, err error) {
 	return
 }
 
+// Hosts retrieves and composes DNS resource records for a given zone and name.
+// It supports A, AAAA, and CNAME record types.
+// Returns a slice of DNS resource records and any error encountered.
 func (inst *Instance) Hosts(zone string, name string) (answers []dns.RR, err error) {
 	recs, err := inst.FetchRecords(zone, name, "A", "AAAA", "CNAME")
 	if err != nil {

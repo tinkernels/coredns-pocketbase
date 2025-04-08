@@ -112,8 +112,7 @@ func (handler *PocketBaseHandler) processQuery(ctx context.Context, state reques
 
 	state.SizeAndDo(rMsg)
 	rMsg = state.Scrub(rMsg)
-	_ = state.W.WriteMsg(rMsg)
-	return dns.RcodeSuccess, nil
+	return dns.RcodeSuccess, state.W.WriteMsg(rMsg)
 }
 
 func (handler *PocketBaseHandler) composeResponseMsgs(records []*model.Record) (answers []dns.RR, extras []dns.RR, err error) {

@@ -26,7 +26,7 @@ func NewComposer(inst *Instance) *Composer {
 func (inst *Instance) ComposeARecord(rec *m.Record) (record dns.RR, extras []dns.RR, err error) {
 	r := new(dns.A)
 	r.Hdr = dns.RR_Header{
-		Name:   dns.Fqdn(fqdn(rec)),
+		Name:   rec.Name,
 		Rrtype: dns.TypeA,
 		Class:  dns.ClassINET,
 		Ttl:    inst.tryRefillTtl(rec),
@@ -49,7 +49,7 @@ func (inst *Instance) ComposeARecord(rec *m.Record) (record dns.RR, extras []dns
 func (inst *Instance) ComposeAAAARecord(rec *m.Record) (record dns.RR, extras []dns.RR, err error) {
 	r := new(dns.AAAA)
 	r.Hdr = dns.RR_Header{
-		Name:   dns.Fqdn(fqdn(rec)),
+		Name:   rec.Name,
 		Rrtype: dns.TypeAAAA,
 		Class:  dns.ClassINET,
 		Ttl:    inst.tryRefillTtl(rec),
@@ -73,7 +73,7 @@ func (inst *Instance) ComposeAAAARecord(rec *m.Record) (record dns.RR, extras []
 func (inst *Instance) ComposeTXTRecord(rec *m.Record) (record dns.RR, extras []dns.RR, err error) {
 	r := new(dns.TXT)
 	r.Hdr = dns.RR_Header{
-		Name:   dns.Fqdn(fqdn(rec)),
+		Name:   rec.Name,
 		Rrtype: dns.TypeTXT,
 		Class:  dns.ClassINET,
 		Ttl:    inst.tryRefillTtl(rec),
@@ -97,7 +97,7 @@ func (inst *Instance) ComposeTXTRecord(rec *m.Record) (record dns.RR, extras []d
 func (inst *Instance) ComposeCNAMERecord(rec *m.Record) (record dns.RR, extras []dns.RR, err error) {
 	r := new(dns.CNAME)
 	r.Hdr = dns.RR_Header{
-		Name:   dns.Fqdn(fqdn(rec)),
+		Name:   rec.Name,
 		Rrtype: dns.TypeCNAME,
 		Class:  dns.ClassINET,
 		Ttl:    inst.tryRefillTtl(rec),
@@ -120,7 +120,7 @@ func (inst *Instance) ComposeCNAMERecord(rec *m.Record) (record dns.RR, extras [
 func (inst *Instance) ComposeNSRecord(rec *m.Record) (record dns.RR, extras []dns.RR, err error) {
 	r := new(dns.NS)
 	r.Hdr = dns.RR_Header{
-		Name:   dns.Fqdn(fqdn(rec)),
+		Name:   rec.Name,
 		Rrtype: dns.TypeNS,
 		Class:  dns.ClassINET,
 		Ttl:    inst.tryRefillTtl(rec),
@@ -148,7 +148,7 @@ func (inst *Instance) ComposeNSRecord(rec *m.Record) (record dns.RR, extras []dn
 func (inst *Instance) ComposeMXRecord(rec *m.Record) (record dns.RR, extras []dns.RR, err error) {
 	r := new(dns.MX)
 	r.Hdr = dns.RR_Header{
-		Name:   dns.Fqdn(fqdn(rec)),
+		Name:   rec.Name,
 		Rrtype: dns.TypeMX,
 		Class:  dns.ClassINET,
 		Ttl:    inst.tryRefillTtl(rec),
@@ -178,7 +178,7 @@ func (inst *Instance) ComposeMXRecord(rec *m.Record) (record dns.RR, extras []dn
 func (inst *Instance) ComposeSRVRecord(rec *m.Record) (record dns.RR, extras []dns.RR, err error) {
 	r := new(dns.SRV)
 	r.Hdr = dns.RR_Header{
-		Name:   dns.Fqdn(fqdn(rec)),
+		Name:   rec.Name,
 		Rrtype: dns.TypeSRV,
 		Class:  dns.ClassINET,
 		Ttl:    inst.tryRefillTtl(rec),
@@ -212,7 +212,7 @@ func (inst *Instance) ComposeSOARecord(rec *m.Record) (record dns.RR, extras []d
 
 	if retRec.Ns == "" {
 		r.Hdr = dns.RR_Header{
-			Name:   dns.Fqdn(fqdn(rec)),
+			Name:   rec.Name,
 			Rrtype: dns.TypeSOA,
 			Class:  dns.ClassINET,
 			Ttl:    inst.tryRefillTtl(rec),
@@ -248,7 +248,7 @@ func (inst *Instance) ComposeSOARecord(rec *m.Record) (record dns.RR, extras []d
 func (inst *Instance) ComposeCAARecord(rec *m.Record) (record dns.RR, extras []dns.RR, err error) {
 	r := new(dns.CAA)
 	r.Hdr = dns.RR_Header{
-		Name:   dns.Fqdn(fqdn(rec)),
+		Name:   rec.Name,
 		Rrtype: dns.TypeCAA,
 		Class:  dns.ClassINET,
 		Ttl:    inst.tryRefillTtl(rec),
@@ -304,13 +304,4 @@ func split255(s string) []string {
 	}
 
 	return sx
-}
-
-// fqdn returns the fully qualified domain name for a record.
-// It combines the record name with its zone if the name is not empty.
-func fqdn(rec *m.Record) string {
-	if rec.Name == "" {
-		return rec.Zone
-	}
-	return rec.Name + "." + rec.Zone
 }

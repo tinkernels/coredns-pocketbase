@@ -1,9 +1,11 @@
 package pocketbase
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pocketbase/pocketbase"
@@ -148,11 +150,41 @@ func (inst *Instance) Start() error {
 		return err
 	}
 
-	if err := inst.pb.Start(); err != nil {
-		log.Print(err)
-		return err
-	}
+	go func() {
+		_ = inst.pb.Start()
+	}()
+
 	return nil
+}
+
+func (inst *Instance) bindRecordCreateEvent() {
+	if inst.cacheCapacity <= 0 {
+		return
+	}
+
+	cachePopFunc := func(e *core.RecordEvent) error {
+		zone := e.Record.GetString("zone")
+		name := e.Record.GetString("name")
+		typ := e.Record.GetString("record_type")
+
+		cacheKey := fmt.Sprintf(RecordsCacheKeyFormat, zone, name, typ)
+		inst.recordsCache.Delete(cacheKey)
+
+		// remove special cache key used in query
+		if typ == "A" || typ == "AAAA" || typ == "CNAME" {
+			cacheKey = fmt.Sprintf(RecordsCacheKeyFormat, zone, name,
+				fmt.Sprintf(RecordsCacheKeyFormat, zone, name, strings.Join([]string{"A", "AAAA", "CNAME"}, ",")))
+			inst.recordsCache.Delete(cacheKey)
+		}
+
+		inst.zonesCache.Delete(ZonesCacheKey)
+
+		return e.Next()
+	}
+
+	inst.pb.OnRecordAfterCreateSuccess(recordCollectionName).BindFunc(cachePopFunc)
+	inst.pb.OnRecordAfterUpdateSuccess(recordCollectionName).BindFunc(cachePopFunc)
+	inst.pb.OnRecordAfterDeleteSuccess(recordCollectionName).BindFunc(cachePopFunc)
 }
 
 // initTheOnlySuperuser ensures there is exactly one superuser with the specified credentials.
