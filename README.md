@@ -8,7 +8,7 @@ pocketbase - PocketBase backend for CoreDNS
 
 ## Description
 
-This plugin uses PocketBase as a backend to store DNS records. These will then can served by CoreDNS. The backend uses a
+This plugin uses PocketBase as a backend to store DNS records, will then can be served by CoreDNS. The backend uses a
 simple single table data structure that can add and remove records from the DNS server.
 
 ## Syntax
@@ -57,7 +57,7 @@ Use `github.com/dgraph-io/ristretto` as in-memory cache handler, handle cache re
 
 [PocketBase](https://github.com/pocketbase/pocketbase) use sqlite3 as storage, and comes with a web console.
 
-This plugin with init a super user and dns model in PocketBase, the admin console with look like
+This plugin will init a super user and dns model in PocketBase, the admin console with look like
 
 ![PocketBase admin console](assets/image/pocketbase-admin.png)
 
