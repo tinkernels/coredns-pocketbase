@@ -1,4 +1,4 @@
-# pocketbase
+# pocketbase &middot; [![License](https://img.shields.io/hexpm/l/plug?logo=Github&style=flat)](https://github.com/tinkernels/coredns-pocketbase/blob/master/LICENSE) [![Go Report Card](https://goreportcard.com/badge/github.com/tinkernels/coredns-pocketbase)](https://goreportcard.com/report/github.com/tinkernels/coredns-pocketbase)
 
 PocketBase backend for CoreDNS
 
