@@ -1,11 +1,14 @@
 package pocketbase
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	"github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/miekg/dns"
 	"github.com/pocketbase/dbx"
+	"github.com/pocketbase/pocketbase/core"
 	m "github.com/tinkernels/coredns-pocketbase/handler/pocketbase/model"
 )
 
@@ -20,68 +23,137 @@ const (
 // For wildcard records, it recursively checks parent domains until a match is found.
 // Returns a slice of records and any error encountered.
 func (inst *Instance) FetchRecords(zone string, name string, types ...string) (recs []*m.Record, err error) {
-	// if cache is enabled, try to get from cache
-	if inst.cacheCapacity > 0 {
-		recs, ok := inst.recordsCache.Get(fmt.Sprintf(RecordsCacheKeyFormat, zone, name, strings.Join(types, ",")))
-		if ok {
-			return recs, nil
-		}
-	}
 	coll, err := inst.pb.FindCollectionByNameOrId(recordCollectionName)
 	if err != nil {
+		log.Errorf("Failed fetching collection [%s], err: %+v",
+			recordCollectionName, err)
 		return nil, err
 	}
 
-	q := inst.pb.RecordQuery(coll).
-		Select("name", "zone", "ttl", "record_type", "content").
-		Where(dbx.NewExp("zone = {:zone}", dbx.Params{"zone": zone})).
-		AndWhere(dbx.NewExp("name = {:name}", dbx.Params{"name": name}))
-
-	// if multiple types are provided, OR them together
-	if len(types) > 1 {
-		typesQ := make([]dbx.Expression, 0)
-		for i, typ := range types {
-			typesQ = append(typesQ, dbx.NewExp(fmt.Sprintf("record_type = {:record_type%d}", i),
-				dbx.Params{fmt.Sprintf("record_type%d", i): typ}))
-		}
-		q = q.AndWhere(dbx.Or(typesQ...))
+	if len(types) == 1 {
+		recs, err = inst.fetchSingleTypeRecords(coll, zone, name, types[0])
 	} else {
-		// if a single type is provided, AND it
-		q = q.AndWhere(dbx.NewExp("record_type = {:record_type}", dbx.Params{"record_type": types[0]}))
+		for _, t := range types {
+			tmpRecs, _ := inst.fetchSingleTypeRecords(coll, zone, name, t)
+			if len(tmpRecs) > 0 {
+				recs = append(recs, tmpRecs...)
+			}
+		}
 	}
 
-	err = q.All(&recs)
-	if err != nil {
-		return nil, err
+	return
+}
+
+// fetchSingleTypeRecords retrieves DNS records of a single type from PocketBase for a given zone and name.
+func (inst *Instance) fetchSingleTypeRecords(coll *core.Collection, zone string, name string, recordType string) (recs []*m.Record, err error) {
+	recs = inst.doFetchSingleTypeRecords(coll, zone, name, recordType)
+	// If no records found, chase cname records.
+	if len(recs) == 0 && recordType != "CNAME" {
+		log.Debugf("No records found in db, zone: [%s], name: [%s], will try chase CNAME", zone, name)
+		recs = inst.resolveCNAMEs(coll, zone, name, recordType)
 	}
 	// If no records found, check for wildcard records.
 	if len(recs) == 0 && name != zone {
-		recs, err = inst.fetchWildCardRecords(zone, name, types...)
+		log.Debugf("No records found in db, zone: [%s], name: [%s], will try wildcard records", zone, name)
+		recs, err = inst.fetchWildCardRecords(coll, zone, name, recordType)
 	}
+	return recs, err
+}
+
+func (inst *Instance) doFetchSingleTypeRecords(coll *core.Collection, zone string, name string, recordType string) (recs []*m.Record) {
+	// if cache is enabled, try to get from cache
+	if inst.cacheCapacity > 0 {
+		log.Debugf("Fetchingrecords from cache, zone: [%s], name: [%s], type: [%s]", zone, name, recordType)
+		recs, ok := inst.recordsCache.Get(fmt.Sprintf(RecordsCacheKeyFormat, zone, name, recordType))
+		if ok {
+			log.Debugf("Found [%d] records in cache, zone: [%s], name: [%s], type: [%s]", len(recs), zone, name, recordType)
+			return recs
+		}
+	}
+	q := inst.pb.RecordQuery(coll).
+		Select("name", "zone", "ttl", "record_type", "content").
+		Where(dbx.NewExp("zone = {:zone}", dbx.Params{"zone": zone})).
+		AndWhere(dbx.NewExp("name = {:name}", dbx.Params{"name": name})).
+		AndWhere(dbx.NewExp("record_type = {:record_type}", dbx.Params{"record_type": recordType}))
+
+	err := q.All(&recs)
+	if err != nil {
+		log.Errorf("Fetching records from db failed, zone: [%s], name: [%s], type: %s, err: %+v", zone, name, recordType, err)
+		return nil
+	}
+	log.Debugf("Fetched with SQL: %s; Parameters: %+v",
+		q.Build().SQL(), q.Build().Params())
+	log.Debugf("Records [%d] fetched from db, zone: [%s], name: [%s], type: %s", len(recs), zone, name, recordType)
 	// if cache is enabled, set to cache
 	if inst.cacheCapacity > 0 {
-		inst.recordsCache.Set(fmt.Sprintf(RecordsCacheKeyFormat, zone, name, strings.Join(types, ",")), recs)
+		log.Debugf("Setting [%d] records to cache, zone: [%s], name: [%s], type: %s", len(recs), zone, name, recordType)
+		inst.recordsCache.Set(fmt.Sprintf(RecordsCacheKeyFormat, zone, name, recordType), recs)
 	}
-	return
+	return recs
+}
+
+func (inst *Instance) resolveCNAMEs(coll *core.Collection, zone string, name string, recordType string) (recs []*m.Record) {
+	cnameZone, cname := zone, name
+	for { // First get CNAME records for the name
+		cnameRecs := inst.doFetchSingleTypeRecords(coll, cnameZone, cname, "CNAME")
+
+		// If no CNAME records found, return empty slice
+		if len(cnameRecs) == 0 {
+			break
+		}
+
+		// Take only the first CNAME record since multiple CNAMEs for the same name are illegal
+		cnameRec := cnameRecs[0]
+
+		// Get the target name from CNAME content
+		var cnameRecord m.CNAMERecord
+		jsonErr := json.Unmarshal([]byte(cnameRec.Content), &cnameRecord)
+		if jsonErr != nil {
+			log.Errorf("Failed to unmarshal CNAME record, zone: %s, name: %s, err: %+v",
+				cnameRec.Zone, cnameRec.Name, jsonErr)
+			break
+		}
+		targetName, targetZone := cnameRecord.Host, cnameRecord.Zone
+		if targetName == "" || targetZone == "" {
+			log.Errorf("Invalid CNAME record, zone: %s, name: %s, content: %s",
+				cnameRec.Zone, cnameRec.Name, cnameRec.Content)
+			break
+		}
+		recs = append(recs, cnameRec)
+
+		log.Debugf("Resolved CNAME, name: [%s], target name: [%s], target zone: [%s]",
+			name, targetName, targetZone)
+
+		targetRecs := inst.doFetchSingleTypeRecords(coll, targetZone, targetName, recordType)
+
+		if len(targetRecs) == 0 {
+			cnameZone, cname = targetZone, targetName
+			continue
+		}
+		recs = append(recs, targetRecs...)
+		break
+	}
+	return recs
 }
 
 // fetchWildCardRecords attempts to find wildcard records
 // recursively until it finds matching records.
 // e.g. x.y.z -> *.y.z -> *.z -> *
-func (inst *Instance) fetchWildCardRecords(zone string, name string, types ...string) (recs []*m.Record, err error) {
-	if name == recordWildcardSymbol {
-		return nil, nil
-	}
-
+func (inst *Instance) fetchWildCardRecords(coll *core.Collection, zone string, name string, recordType string) (recs []*m.Record, err error) {
 	name = strings.TrimPrefix(name, recordWildcardPrefix)
 
 	target := recordWildcardSymbol
-	i, shot := dns.NextLabel(name, 0)
-	if !shot {
+	i, end := dns.NextLabel(name, 0)
+	if !end {
 		target = recordWildcardPrefix + name[i:]
 	}
 
-	return inst.FetchRecords(zone, target, types...)
+	if target == recordWildcardSymbol {
+		log.Debugf("Wildcard name is not allowed, name: %s", target)
+		return nil, nil
+	}
+
+	return inst.fetchSingleTypeRecords(coll, zone, target, recordType)
 }
 
 // FetchZones retrieves all unique DNS zones from PocketBase.
@@ -92,14 +164,28 @@ func (inst *Instance) FetchZones() (zones []string, err error) {
 	if inst.cacheCapacity > 0 {
 		zones, ok := inst.zonesCache.Get(ZonesCacheKey)
 		if ok {
+			log.Debugf("Found %d zones in cache", len(zones))
 			return zones, nil
 		}
 	}
-	coll, err := inst.pb.FindCollectionByNameOrId(recordCollectionName)
+	zones, err = inst.fetchZonesFromDb()
 	if err != nil {
+		log.Errorf("Failed to fetch zones from db, err: %+v", err)
 		return nil, err
 	}
+	// if cache is enabled, set to cache
+	if inst.cacheCapacity > 0 {
+		inst.zonesCache.Set(ZonesCacheKey, zones)
+	}
+	return
+}
 
+func (inst *Instance) fetchZonesFromDb() (zones []string, err error) {
+	coll, err := inst.pb.FindCollectionByNameOrId(recordCollectionName)
+	if err != nil {
+		log.Errorf("Failed fetching collection [%s], err: %+v", recordCollectionName, err)
+		return nil, err
+	}
 	var zonesContainer []struct {
 		Zone string `db:"zone" json:"zone"`
 	}
@@ -109,12 +195,9 @@ func (inst *Instance) FetchZones() (zones []string, err error) {
 		All(&zonesContainer)
 	if err == nil {
 		for _, z := range zonesContainer {
+			log.Debugf("Found zone in db, zone: %s", z.Zone)
 			zones = append(zones, z.Zone)
 		}
-	}
-	// if cache is enabled, set to cache
-	if inst.cacheCapacity > 0 {
-		inst.zonesCache.Set(ZonesCacheKey, zones)
 	}
 	return
 }
@@ -125,6 +208,7 @@ func (inst *Instance) FetchZones() (zones []string, err error) {
 func (inst *Instance) Hosts(zone string, name string) (answers []dns.RR, err error) {
 	recs, err := inst.FetchRecords(zone, name, "A", "AAAA", "CNAME")
 	if err != nil {
+		log.Errorf("Failed to fetch records, zone: [%s], name: [%s], err: %+v", zone, name, err)
 		return nil, err
 	}
 
@@ -135,18 +219,21 @@ func (inst *Instance) Hosts(zone string, name string) (answers []dns.RR, err err
 		case "A":
 			aRec, _, err := inst.ComposeARecord(rec)
 			if err != nil {
+				log.Errorf("Failed to compose A record, zone: [%s], name: [%s], err: %+v", zone, name, err)
 				return nil, err
 			}
 			answers = append(answers, aRec)
 		case "AAAA":
 			aaaaRec, _, err := inst.ComposeAAAARecord(rec)
 			if err != nil {
+				log.Errorf("Failed to compose AAAA record, zone: [%s], name: [%s], err: %+v", zone, name, err)
 				return nil, err
 			}
 			answers = append(answers, aaaaRec)
 		case "CNAME":
 			cnameRec, _, err := inst.ComposeCNAMERecord(rec)
 			if err != nil {
+				log.Errorf("Failed to compose CNAME record, zone: [%s], name: [%s], err: %+v", zone, name, err)
 				return nil, err
 			}
 			answers = append(answers, cnameRec)

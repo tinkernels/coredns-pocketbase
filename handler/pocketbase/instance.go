@@ -2,12 +2,12 @@ package pocketbase
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/hook"
@@ -21,7 +21,7 @@ const (
 	// ZonesCacheKey is the key used to store zones in the cache.
 	ZonesCacheKey = "zones"
 	// RecordsCacheKeyFormat defines the format for record cache keys.
-	RecordsCacheKeyFormat = "records.%s.%s.%s"
+	RecordsCacheKeyFormat = "records.[%s]-[%s]-[%s]"
 )
 
 // Instance represents a PocketBase instance with DNS-specific configurations and caching.
@@ -44,7 +44,7 @@ type Instance struct {
 // The data directory will be converted to an absolute path if it's relative.
 func NewWithDataDir(dataDir string) *Instance {
 	finalDataDir := toAbsPath(dataDir)
-	log.Print("instance dataDir: ", finalDataDir)
+	log.Info("PocketBase instance data directory: ", finalDataDir)
 	inst := &Instance{
 		pb: pocketbase.NewWithConfig(pocketbase.Config{
 			DefaultDataDir: finalDataDir,
@@ -94,11 +94,13 @@ func (inst *Instance) WithCacheCapacity(capacity int) *Instance {
 		inst.zonesCache, err = cache.NewZonesCache()
 		// if error, disable cache
 		if err != nil {
+			log.Error("Failed to create zones cache", err)
 			inst.cacheCapacity = 0
 			return inst
 		}
 		inst.recordsCache, err = cache.NewRecordsCache(inst.cacheCapacity)
 		if err != nil {
+			log.Error("Failed to create records cache", err)
 			inst.cacheCapacity = 0
 			return inst
 		}
@@ -111,11 +113,13 @@ func (inst *Instance) WithCacheCapacity(capacity int) *Instance {
 func (inst *Instance) initZonesCacheRefreshSchedule() {
 	if inst.cacheCapacity > 0 {
 		go func() {
+			log.Infof("Start zones cache refresh schedule, interval: %s", ZonesCacheRefreshInterval)
 			for {
 				time.Sleep(ZonesCacheRefreshInterval)
-				zones, err := inst.FetchZones()
+				log.Debug("Refreshing zones cache...")
+				zones, err := inst.fetchZonesFromDb()
 				if err != nil {
-					log.Print(err)
+					log.Error("Failed to refresh zones cache", err)
 					continue
 				}
 				inst.zonesCache.Set(ZonesCacheKey, zones)
@@ -133,10 +137,11 @@ func (inst *Instance) Start() error {
 
 	inst.pb.OnServe().Bind(&hook.Handler[*core.ServeEvent]{
 		Func: func(e *core.ServeEvent) error {
-			log.Print("skip installer...")
+			log.Debug("Skip pocketbase installer...")
 			e.InstallerFunc = nil
 			err := inst.initTheOnlySuperuser(inst.suEmail, inst.suPassword)
 			if err != nil {
+				log.Error("Failed to init pocketbase superuser", err)
 				return err
 			}
 			inst.initZonesCacheRefreshSchedule()
@@ -145,8 +150,13 @@ func (inst *Instance) Start() error {
 		},
 	})
 
+	// after altering records, emit event
+	inst.bindRecordAlteringEvent()
+
+	log.Info("Bootstrapping PocketBase instance...")
 	err := inst.pb.Bootstrap()
 	if err != nil {
+		log.Error("Failed to bootstrap pocketbase", err)
 		return err
 	}
 
@@ -157,8 +167,11 @@ func (inst *Instance) Start() error {
 	return nil
 }
 
-func (inst *Instance) bindRecordCreateEvent() {
+func (inst *Instance) bindRecordAlteringEvent() {
+	log.Debug("Bind record altering event...")
+
 	if inst.cacheCapacity <= 0 {
+		log.Debug("Cache is disabled, skipping record altering event binding...")
 		return
 	}
 
@@ -168,15 +181,18 @@ func (inst *Instance) bindRecordCreateEvent() {
 		typ := e.Record.GetString("record_type")
 
 		cacheKey := fmt.Sprintf(RecordsCacheKeyFormat, zone, name, typ)
+		log.Debugf("Deleting record cache, key: %s", cacheKey)
 		inst.recordsCache.Delete(cacheKey)
 
 		// remove special cache key used in query
 		if typ == "A" || typ == "AAAA" || typ == "CNAME" {
 			cacheKey = fmt.Sprintf(RecordsCacheKeyFormat, zone, name,
 				fmt.Sprintf(RecordsCacheKeyFormat, zone, name, strings.Join([]string{"A", "AAAA", "CNAME"}, ",")))
+			log.Debugf("Deleting record cache, key: %s", cacheKey)
 			inst.recordsCache.Delete(cacheKey)
 		}
 
+		log.Debug("Deleting zones cache...")
 		inst.zonesCache.Delete(ZonesCacheKey)
 
 		return e.Next()
@@ -196,7 +212,7 @@ func (inst *Instance) initTheOnlySuperuser(suEmail, suPwd string) error {
 		return err
 	}
 
-	log.Print("init superuser...")
+	log.Infof("Init pocketbase superuser, email: %s", suEmail)
 
 	record, _ := inst.pb.FindAuthRecordByEmail(core.CollectionNameSuperusers, suEmail)
 	if record != nil {
@@ -204,6 +220,7 @@ func (inst *Instance) initTheOnlySuperuser(suEmail, suPwd string) error {
 		record.Set("password", suPwd)
 		err = inst.pb.Save(record)
 		if err != nil {
+			log.Error("Failed to update pocketbase superuser", err)
 			return err
 		}
 	} else {
@@ -213,7 +230,8 @@ func (inst *Instance) initTheOnlySuperuser(suEmail, suPwd string) error {
 		record.Set("password", suPwd)
 		err = inst.pb.Save(record)
 		if err != nil {
-			return nil
+			log.Error("Failed to create pocketbase superuser", err)
+			return err
 		}
 	}
 
@@ -221,6 +239,7 @@ func (inst *Instance) initTheOnlySuperuser(suEmail, suPwd string) error {
 	var existingSuperusers []core.Record
 	err = inst.pb.RecordQuery(superusers).All(&existingSuperusers)
 	if err != nil {
+		log.Error("Failed to get pocketbase superusers", err)
 		return err
 	}
 
@@ -228,6 +247,7 @@ func (inst *Instance) initTheOnlySuperuser(suEmail, suPwd string) error {
 		for _, superuser := range existingSuperusers {
 			if superuser.GetString("email") != suEmail {
 				if err = inst.pb.Delete(&superuser); err == nil {
+					log.Infof("Delete pocketbase superuser, email: %s", superuser.GetString("email"))
 					return err
 				}
 			}
@@ -246,13 +266,16 @@ func (inst *Instance) WaitForReady() {
 // The path is resolved relative to the executable's directory.
 func toAbsPath(path string) string {
 	if filepath.IsAbs(path) {
+		log.Debugf("Path is already absolute, path: %s", path)
 		return path
 	}
 	execPath, err := os.Executable()
 	if err != nil {
+		log.Error("Failed to get executable path", err)
 		return ""
 	}
 	execDir := filepath.Dir(execPath)
 	absPath := filepath.Join(execDir, path)
+	log.Debugf("Convert relative path to absolute path, path: %s, absPath: %s", path, absPath)
 	return absPath
 }

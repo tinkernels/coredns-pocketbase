@@ -31,6 +31,7 @@ type TXTRecord struct {
 // CNAMERecord represents a CNAME DNS record
 type CNAMERecord struct {
 	Host string `json:"host"` // Target hostname
+	Zone string `json:"zone"` // Zone of the record
 }
 
 // NSRecord represents an NS (Name Server) DNS record

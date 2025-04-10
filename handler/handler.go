@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/coredns/coredns/plugin"
+	"github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/coredns/coredns/request"
 	"github.com/miekg/dns"
 	pb "github.com/tinkernels/coredns-pocketbase/handler/pocketbase"
@@ -30,7 +32,12 @@ type PocketBaseHandler struct {
 }
 
 func (handler *PocketBaseHandler) WarmUp() {
-	handler.pbInst.Start()
+	log.Info("Warming up pocketbase...")
+	err := handler.pbInst.Start()
+	if err != nil {
+		log.Error("Failed to start pocketbase", err)
+		return
+	}
 	handler.pbInst.WaitForReady()
 }
 
@@ -48,6 +55,8 @@ func (handler *PocketBaseHandler) ServeDNS(ctx context.Context, w dns.ResponseWr
 func (handler *PocketBaseHandler) processQuery(ctx context.Context, state request.Request) (int, error) {
 	qName := state.Name()
 	qType := state.Type()
+
+	log.Debugf("Querying name: %s, type: %s", qName, qType)
 
 	zones, err := handler.pbInst.FetchZones()
 	if err != nil {
@@ -68,7 +77,7 @@ func (handler *PocketBaseHandler) processQuery(ctx context.Context, state reques
 	if len(records) == 0 {
 		recordNotFound = true
 		// no record found but we are going to return a SOA
-		recs, err := handler.pbInst.FetchRecords(qZone, "", "SOA")
+		recs, err := handler.pbInst.FetchRecords(qZone, qZone, "SOA")
 		if err != nil {
 			return handler.errorResponse(state, dns.RcodeServerFailure, err)
 		}
@@ -90,7 +99,8 @@ func (handler *PocketBaseHandler) processQuery(ctx context.Context, state reques
 	answers, extras, err := handler.composeResponseMsgs(records)
 	// handle error type
 	if err != nil {
-		if err, ok := err.(*ErrUnsupportedRecordType); ok {
+		var errUnsupportedRecordType *ErrUnsupportedRecordType
+		if errors.As(err, &errUnsupportedRecordType) {
 			return handler.errorResponse(state, dns.RcodeNotImplemented, err)
 		}
 		return handler.errorResponse(state, dns.RcodeServerFailure, err)
@@ -99,7 +109,6 @@ func (handler *PocketBaseHandler) processQuery(ctx context.Context, state reques
 	rMsg := new(dns.Msg)
 	rMsg.SetReply(state.Req)
 	rMsg.Authoritative = true
-	rMsg.RecursionAvailable = false
 	rMsg.Compress = true
 
 	if !recordNotFound {
@@ -172,7 +181,8 @@ func NewWithConfig(config *Config) (handler *PocketBaseHandler, err error) {
 		WithSuUserName(finalConfig.SuEmail).
 		WithSuPassword(finalConfig.SuPassword).
 		WithListen(finalConfig.Listen).
-		WithDefaultTtl(finalConfig.DefaultTtl)
+		WithDefaultTtl(finalConfig.DefaultTtl).
+		WithCacheCapacity(finalConfig.CacheCapacity)
 
 	handler.pbInst = pbInstance
 
@@ -182,7 +192,7 @@ func NewWithConfig(config *Config) (handler *PocketBaseHandler, err error) {
 func (handler *PocketBaseHandler) errorResponse(state request.Request, rCode int, err error) (int, error) {
 	msg := new(dns.Msg)
 	msg.SetRcode(state.Req, rCode)
-	msg.Authoritative, msg.RecursionAvailable, msg.Compress = true, false, true
+	msg.Authoritative, msg.Compress = true, true
 
 	state.SizeAndDo(msg)
 	_ = state.W.WriteMsg(msg)

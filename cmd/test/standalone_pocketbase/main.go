@@ -1,17 +1,19 @@
 package main
 
 import (
+	"github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/pocketbase/pocketbase"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/plugins/migratecmd"
 	"github.com/pocketbase/pocketbase/tools/hook"
 	_ "github.com/tinkernels/coredns-pocketbase/cmd/test/standalone_pocketbase/pb_migrations"
-	"log"
 	"os"
 	"path/filepath"
 )
 
 func main() {
+	log.Info("Starting pocketbase...")
+
 	pb := pocketbase.NewWithConfig(pocketbase.Config{
 		DefaultDataDir: defaultDataDir(),
 	})
