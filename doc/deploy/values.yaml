@@ -74,10 +74,10 @@ servers:
       # Serves a /metrics endpoint on :9153, required for serviceMonitor
       - name: prometheus
         parameters: 0.0.0.0:9153
-      - name: forward
-        parameters: . /etc/resolv.conf
+#      - name: forward
+#        parameters: . /etc/resolv.conf
       - name: cache
         parameters: 30
-      - name: loop
+#      - name: loop
       - name: reload
       - name: loadbalance
